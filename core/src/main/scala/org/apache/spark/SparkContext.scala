@@ -464,14 +464,27 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
   //初始化代码块
 
   /**
+    * 流程：
     * 1)复制sparkconf
     * 2）对Sparkconf各种信息进行校验
     * 3）必须指定spark.master和spark.app.name属性,否是会抛出异常,结束初始化过程
     * 4）设置Spark的driver主机名或IP地址、端口属性
     * 5）设置executor.id为driver
     * 6）获取并设置jars和files，从spark-submit中获取的应该。
-    * 7）保存日志相关信息的路径,可以是hdfs://开头的HDFS路径,也可以是file://开头的本地路径,都需要提前创建
-    * 8）
+    * 7）设置保存日志相关信息的路径,可以是hdfs://开头的HDFS路径,也可以是file://开头的本地路径,都需要提前创建
+    * 8）设置是否压缩记录Spark事件的属性,前提spark.eventLog.enabled为true
+    * 9）创建JobProgressListener实例，并将其添加到listenerbus里。
+    * 10）创建Spark执行环境(缓存, 任务输出跟踪,等等)
+    * 11）创建MetadataCleaner实例并设置相应的属性 。用于清除过期的持久化RDD,构造MetadataCleaner时的参数是cleanup,用于清理persistentRdds
+    * 12）创建SparkStatusTracker实例并设置相应的属性
+    * 13）设置processbar、ui的属性初始化，并绑定ui界面
+    * 14）设置hadoop相关属性 。默认情况下:Spark使用HDFS作为分布式文件系统,所以需要获取Hadoop相关配置信息
+    * 15）将jars和files遍历并添加到SparkEnv中
+    * 16）从conf获取值并赋予到executorMemory中
+    * 17）调用RPC的setupEndpoint来创建HeartbeatReceiver实例并赋予sc的属性中。 注册一个endpoint， 其返回结果为RPC EndpointRef。 在"createTaskScheduler"之前,我们需要注册"HeartbeatReceiver", 因为执行器将接收“heartbeatreceiver”的构造函数。其中HeartbeatReceiver为RPCEndpointRef实例
+    * 18）调用sparkcontext的createTaskScheduler方法来创建TaskSchedulerImpl,并生成不同的SchedulerBanckend， 并初始化TaskSchedulerImpl类实例（使其持有backend进行引用、创建Pool,Pool中缓存了调度队列,调度算法及TaskSetManager集合等信息、创建FIFOSchedulableBuilder（默认fifo） 用来操作Pool中的调度队列）
+    *     任务调度器（TaskScheduler）:负责任务的提交,并且请求集群管理器对任务调度,TaskSchedule可以看做任务调度的客户端
+    * 19）
     */
   try {
     //对SparkCon进行复制
@@ -627,9 +640,9 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     val (sched, ts) = SparkContext.createTaskScheduler(this, master)
     _schedulerBackend = sched
     _taskScheduler = ts
+
     //DAGScheduler主要用于在任务正式交给TaskSchedulerImpl提交之前做一些准备工作
     //包括创建Job,将DAG中的RDD划分到不同的Stage,提交Stage等
-    
     _dagScheduler = new DAGScheduler(this)
     // 主要目的 scheduler = sc.taskScheduler
     //HeartbeatReceiver接收TaskSchedulerIsSet消息,设置scheduler = sc.taskScheduler
