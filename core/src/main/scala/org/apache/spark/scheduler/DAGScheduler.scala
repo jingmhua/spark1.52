@@ -57,6 +57,7 @@ import org.apache.spark.storage.BlockManagerMessages.BlockManagerHeartbeat
  * not caused by shuffle file loss are handled by the TaskScheduler, which will retry each task
  * a small number of times before cancelling the whole stage.
  *
+ * 根据当前缓存状态决定每个task的最佳位置，并将其传递到low-level的taskscheduler中
   * 除了提出DAG的阶段，这个班级也决定了首选基于当前缓存状态运行每个任务的位置,并将其传递到低级别的TaskScheduler。
   * 此外,它处理由于随机输出文件丢失而导致的故障,在这种情况下可能需要重新提交旧阶段。
   * 一个不是随机文件丢失引起的阶段的失败*由TaskScheduler处理,TaskScheduler将在取消整个阶段之前重试每个任务少量次数。
@@ -71,7 +72,7 @@ import org.apache.spark.storage.BlockManagerMessages.BlockManagerHeartbeat
 private[spark]
 /**
  * DAGScheduler主要用于在任务正式交给TaskSchedulerImpl提交之前做一些准备工作
- * 包括创建Job,将DAG中的RDD划分到不同的Stage,提交Stage等    
+ * 包括创建Job,将DAG中的RDD划分到不同的Stage,提交Stage等
  * 主要维护jobId和stageId的关系,stage,ActiveJob以及缓存的RDD的partitions的位置信息
  */
 class DAGScheduler(
@@ -278,7 +279,7 @@ class DAGScheduler(
           //indices返回所有有效索引值
           rdd.partitions.indices.map(index => RDDBlockId(rdd.id, index)).toArray[BlockId]
         //根据块id从blockManagerMaster获得Task位置
-        blockManagerMaster.getLocations(blockIds).map { bms =>
+        (blockManagerMaster getLocations blockIds).map { bms =>
           bms.map(bm => TaskLocation(bm.host, bm.executorId))
         }
       }
