@@ -82,7 +82,7 @@ import org.apache.spark.util._
  * 4)Hadoop相关配置及Executor环境变量的设置
  * 5)创建任务调度TaskScheduler
  * 6)创建和启动DAGScheduler
- * 7)TashScheduler的启动
+ * 7)TaskScheduler的启动
  * 8)初始化块管理器BlockManager(BlockManager是存储体系的主要组件之一)
  * 9)启动测量系统MetricsSystem
  * 10)创建和启动Executor分配 管理器ExecutorAllocationManager
@@ -101,7 +101,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
   private val creationSite: CallSite = Utils.getCallSite()
 
   // If true, log warnings instead of throwing exceptions when multiple SparkContexts are active
-  // 如果为true,多个激活sparkcontexts日志警告,而不是抛出异常
+  // 如果为true,当多个激活sparkcontexts时进行日志警告,而不是抛出异常
   //SparkContext默认只有一个实例
   private val allowMultipleContexts: Boolean =
     config.getBoolean("spark.driver.allowMultipleContexts", false)
@@ -376,6 +376,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
   // 返回当前用户名,这是当前登录的用户
   val sparkUser = Utils.getCurrentUserName()
 
+  //这个是getter和setter方法
   private[spark] def schedulerBackend: SchedulerBackend = _schedulerBackend
   private[spark] def schedulerBackend_=(sb: SchedulerBackend): Unit = {
     _schedulerBackend = sb
@@ -461,6 +462,17 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     Utils.setLogLevel(org.apache.log4j.Level.toLevel(logLevel))
   }
   //初始化代码块
+
+  /**
+    * 1)复制sparkconf
+    * 2）对Sparkconf各种信息进行校验
+    * 3）必须指定spark.master和spark.app.name属性,否是会抛出异常,结束初始化过程
+    * 4）设置Spark的driver主机名或IP地址、端口属性
+    * 5）设置executor.id为driver
+    * 6）获取并设置jars和files，从spark-submit中获取的应该。
+    * 7）保存日志相关信息的路径,可以是hdfs://开头的HDFS路径,也可以是file://开头的本地路径,都需要提前创建
+    * 8）
+    */
   try {
     //对SparkCon进行复制
     _conf = config.clone()
@@ -494,7 +506,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     _conf.setIfMissing("spark.driver.port", "0")
     //设置executor.id为driver
     _conf.set("spark.executor.id", SparkContext.DRIVER_IDENTIFIER)
-
+    //获取并设置jars和files
     _jars = _conf.getOption("spark.jars").map(_.split(",")).map(_.filter(_.size != 0)).toSeq.flatten//转换 
     _files = _conf.getOption("spark.files").map(_.split(",")).map(_.filter(_.size != 0)).toSeq.flatten
    //保存日志相关信息的路径,可以是hdfs://开头的HDFS路径,也可以是file://开头的本地路径,都需要提前创建
