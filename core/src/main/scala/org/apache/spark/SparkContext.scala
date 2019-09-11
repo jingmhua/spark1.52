@@ -464,8 +464,8 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
   //初始化代码块
 
   /**
-    * 流程：
-    * 1)复制sparkconf
+    * 重要！SparkContext初始化代码块：
+    * 1) 复制sparkconf
     * 2）对Sparkconf各种信息进行校验
     * 3）必须指定spark.master和spark.app.name属性,否是会抛出异常,结束初始化过程
     * 4）设置Spark的driver主机名或IP地址、端口属性
@@ -484,7 +484,24 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     * 17）调用RPC的setupEndpoint来创建HeartbeatReceiver实例并赋予sc的属性中。 注册一个endpoint， 其返回结果为RPC EndpointRef。 在"createTaskScheduler"之前,我们需要注册"HeartbeatReceiver", 因为执行器将接收“heartbeatreceiver”的构造函数。其中HeartbeatReceiver为RPCEndpointRef实例
     * 18）调用sparkcontext的createTaskScheduler方法来创建TaskSchedulerImpl,并生成不同的SchedulerBanckend， 并初始化TaskSchedulerImpl类实例（使其持有backend进行引用、创建Pool,Pool中缓存了调度队列,调度算法及TaskSetManager集合等信息、创建FIFOSchedulableBuilder（默认fifo） 用来操作Pool中的调度队列）
     *     任务调度器（TaskScheduler）:负责任务的提交,并且请求集群管理器对任务调度,TaskSchedule可以看做任务调度的客户端
-    * 19）
+    * 19）创建DAGScheduler，并赋值给sc的属性里
+    *     DAGScheduler主要用于在任务正式交给TaskSchedulerImpl提交之前做一些准备工作。包括创建Job,将DAG中的RDD划分到不同的Stage,提交Stage等
+    * 20) 调用netty架构的receiveandreply方法，HeartbeatReceiver类实例接收TaskSchedulerIsSet消息,设置HeartbeatReceiver类实例的scheduler = sparkcontext.taskScheduler
+    * 21) taskScheduler.start():启动任务调度器。 ①taskScheduler的schedulerbackend 注册endpoint（setupEndpoint） ② 对于spark.speculation为true 且非本地模式时，开启推测任务（所谓的推测执行,就是当所有task都开始运行之后,Job Tracker会统计所有任务的平均进度,如果某个task所在的task node机器配置比较低或者CPU load很高(原因很多),导致任务执行比总体任务的平均执行要慢,此时Job Tracker会启动一个新的任务(duplicate task),原有任务和新任务哪个先执行完就把另外一个kill掉,）
+    * 22）taskScheduler.applicationId()//获得应用程序ID
+    * 23）blockManager.initialize(applicationId)：blockManager初始化。 ①blockTransferService 初始化 ②shuffleClient初始化 ③blockManagerId创建 ④shuffleServerId创建,当有外部externalShuffleServiceEnabled则初始化 ⑤向BlockManagerMaster注册blockManagerId,注册信息包括blockManagerId,标识了Slave的ExecutorId,Hostname和port
+    * 24）metricsSystem.start()//启动测量系统
+    * 25）Web UI的度量系统启动后,驱动测量servlet处理
+    * 26）eventLogger赋值并启动
+    * 27）获取动态分配的flag。 动态分配最小Executor数量和最大Executor数量,每个Executor可以运行的Task的数量等配置信息
+    * 28）对已分配的Executor进行管理,创建和启动ExecutorAllocationManager，启动动态分配
+    * 29）ContextCleaner用于清理超出应用范围的RDD、ShuffleDependency和Broadcast对象，默认为true
+    * 30）在spark.extraListeners中注册一个监听,然后启动侦听器总线
+    * 31）一旦任务调度程序准备就绪后,发布环境更新事件 listenerBus.post(environmentUpdate)
+    * 32）提交应用程序启动事件listenerBus.post(SparkListenerApplicationStart(appName, Some(applicationId),startTime, sparkUser, applicationAttemptId, schedulerBackend.getDriverLogUrls))
+    * 33）taskScheduler.postStartHook()在系统成功初始化之后调用(通常在sparkcontext中),等待从属注册等，目的是为了等待backend就绪
+    * 34）注册测量信息
+    * 35）初始化shutdownHookRef
     */
   try {
     //对SparkCon进行复制
