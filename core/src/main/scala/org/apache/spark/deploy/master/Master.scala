@@ -324,11 +324,12 @@ private[deploy] class Master(
         //创建Application,会调用Application.init方法
         val app = createApplication(description, driver)
         //注册Application的过程
+        //将applicationinfo加入缓存，将application加入等待调度队列---waitingApps
         registerApplication(app)
         logInfo("Registered app " + description.name + " with ID " + app.id)
         //持久化app的元数据信息,可以选择持久化到ZooKeeper,本地文件系统,或者不持久化
         persistenceEngine.addApplication(app)
-        //向ClientEndpoint发送RegisteredAppliction消息
+        //反向，向backend发送消息。 向ClientEndpoint发送RegisteredAppliction消息
         driver.send(RegisteredApplication(app.id, self))
         //为处于待分配资源的Application分配资源。在每次有新的Application加入或者新的资源加入时都会调用schedule进行调度
         schedule()
@@ -349,14 +350,20 @@ private[deploy] class Master(
        * 2)将ExecutorInfo的状态改为Exited
        * 3)Exited也是属于Executor完成状态,所以重新调用schedule给Application进行资源调度
        */
+
+        //找到executor对应的app，之后反过来通过app内部的executors缓存获取executor信息
       val execOption = idToApp.get(appId).flatMap(app => app.executors.get(execId))
       execOption match {
+          //如果有值
         case Some(exec) => {
+          //设置executor当前的状态
           val appInfo = idToApp(appId)
           exec.state = state
           if (state == ExecutorState.RUNNING) { appInfo.resetRetryCount() }
           //向Driver发送ExecutorUpdated消息
           exec.application.driver.send(ExecutorUpdated(execId, state, message, exitStatus))
+
+          //判断，如果状态是已完成的
           if (ExecutorState.isFinished(state)) {
             // Remove this executor from the worker and app
             //从Worker和app中删除这个executor
@@ -369,14 +376,16 @@ private[deploy] class Master(
               appInfo.removeExecutor(exec)
             }
             exec.worker.removeExecutor(exec)
-
+            //如果executor的退出状态是非正常的
             val normalExit = exitStatus == Some(0)
             // Only retry certain number of times so we don't go into an infinite loop.
             // 只有重试一定数量的时间,所以我们不进入一个无限循环
             if (!normalExit) {
               if (appInfo.incrementRetryCount() < ApplicationState.MAX_NUM_RETRY) {
+                //重新调度
                 schedule()
               } else {
+                //否则， 进行removeapplication操作
                 val execs = appInfo.executors.values
                 if (!execs.exists(_.state == ExecutorState.RUNNING)) {
                   logError(s"Application ${appInfo.desc.name} with ID ${appInfo.id} failed " +
@@ -395,6 +404,7 @@ private[deploy] class Master(
 
     case DriverStateChanged(driverId, state, exception) => {
       state match {
+          //如果driver的状态为错误、完成、被杀掉、失败，那么就移除driver
         case DriverState.ERROR | DriverState.FINISHED | DriverState.KILLED | DriverState.FAILED =>
           removeDriver(driverId, state, exception)
         case _ =>
@@ -658,13 +668,14 @@ private[deploy] class Master(
  * 调用时机
  * 1. 在恢复开始后的60s会被强制调用
  * 2. 在每次收到AppClient和Worker的消息回复后会检查如果Application和worker的状态都不为UNKNOWN,则调用
+  * 用途：1、用于主备切换。 2、xxx
  */
   private def completeRecovery() {
     // Ensure "only-once" recovery semantics using a short synchronization period.
     //使用短同步期确保只“一次”恢复语义
     if (state != RecoveryState.RECOVERING) { return }
     state = RecoveryState.COMPLETING_RECOVERY
-    //将所有未响应的Worker和Application删除
+    //将所有未响应（UNKNOWN）的Worker和Application删除
     // Kill off any workers and apps that didn't respond to us.
     // 删除在60s内没有回应的app和worker
     workers.filter(_.state == WorkerState.UNKNOWN).foreach(removeWorker)
@@ -826,7 +837,7 @@ private[deploy] class Master(
     // Right now this is a very simple FIFO scheduler. We keep trying to fit in the first app
     // in the queue, then the second app, etc.
     //app.coresLeft是Application需要的内核数coresLeft
-    // 遍历一下app
+    // 遍历一下waitingApps中的applicationinfo，并过滤出还有需要调度的core的application
     for (app <- waitingApps if app.coresLeft > 0) {//使用FIFO(先进先出)的方式为等待的app分配资源,
       //为应用程序具体分配Executor之前要判断应用程序是否还需要分配cores,如果不需要,则不会为应用程序分配Executor
       val coresPerExecutor: Option[Int] = app.desc.coresPerExecutor //获得每个Executor上分配多少个cores
@@ -836,7 +847,9 @@ private[deploy] class Master(
      * 2)空闲内存大于等于Apllication在每个Worker上需要的内存(memoryPerSlave)
      * 3)Worker可使用CPU核数大于或等于Application分配CPU核数过虑得到的Worker
      * 4)按照其空闲CUP内核数倒序排列,优先选择可用core数多的.
-     */   
+     */
+
+      //过滤出状态为alive的worker，再次过滤可以被application使用的worker，之后按照剩余cpu数量倒序
       val usableWorkers = workers.toArray.filter(_.state == WorkerState.ALIVE)
         .filter(worker => worker.memoryFree >= app.desc.memoryPerExecutorMB &&
           worker.coresFree >= coresPerExecutor.getOrElse(1))//至少大于一个
@@ -892,6 +905,7 @@ private[deploy] class Master(
   }
 
   /**
+    * 资源调度。重中之重
    * 为处于待分配资源的Application分配资源,每次有新的应用程序或者集群资源状态发生改变的时候
    * （包括Executor增加或者减少、Worker增加或者减少等）
    * Schedule the currently available resources among waiting apps. This method will be called
@@ -905,6 +919,8 @@ private[deploy] class Master(
     //把当前workers这个HashSet的顺序随机打乱
     val shuffledWorkers = Random.shuffle(workers) // Randomization helps balance drivers
     for (worker <- shuffledWorkers if worker.state == WorkerState.ALIVE) {//遍历活着的workers
+      //用yarn-cluster才会注册driver，因为standalone和yarn-client模式下都会在本地直接启动driver，
+      // 不会来注册driver，更不可能让master调度driver了
       for (driver <- waitingDrivers) {//在等待队列中的Driver会进行资源分配
 	        //当前的worker内存和cpu均大于当前driver请求的mem和cpu,启动launchDriver
         if (worker.memoryFree >= driver.desc.mem && worker.coresFree >= driver.desc.cores) {
@@ -915,6 +931,9 @@ private[deploy] class Master(
         }
       }
     }
+    //application的调度机制（重中之重）
+    //根据spreadOutApps的值，1种是把worker的cpu core平均分配给executor，
+    // 另外1种是把worker的cpu core集中分配到1个executor上。
     startExecutorsOnWorkers()
   }
 /**
@@ -928,6 +947,7 @@ private[deploy] class Master(
 
   private def launchExecutor(worker: WorkerInfo, exec: ExecutorDesc): Unit = {
     logInfo("Launching executor " + exec.fullId + " on worker " + worker.id)
+    //将executor加入worker内部的缓存
     worker.addExecutor(exec)
     //2)向Worker发送LaunchExecutor消息,运行Executor
     worker.endpoint.send(LaunchExecutor(masterUrl,
@@ -1036,12 +1056,12 @@ private[deploy] class Master(
  */
   private def registerApplication(app: ApplicationInfo): Unit = {
     val appAddress = app.driver.address
-    //判断addressToApp是否包含 appAddress
+    //判断addressToApp是否包含 appAddress，如果包含则无需重新注册app。
     if (addressToApp.contains(appAddress)) {
       logInfo("Attempted to re-register application at same address: " + appAddress)
       return
     }
-
+    //向applicationMetricsSystem注册applicationMSource
     applicationMetricsSystem.registerSource(app.appSource)
     //保存到master维护的成员变量中
     apps += app
@@ -1337,6 +1357,7 @@ private[deploy] class Master(
   private def launchDriver(worker: WorkerInfo, driver: DriverInfo) {
     logInfo("Launching driver " + driver.id + " on worker " + worker.id)
     worker.addDriver(driver)
+    //将worker加入到driver内部缓存结构中
     driver.worker = Some(worker)
     //Master向worker发送LaunchDriver消息,Worker启动driver
     worker.endpoint.send(LaunchDriver(driver.id, driver.desc))
@@ -1344,22 +1365,32 @@ private[deploy] class Master(
     driver.state = DriverState.RUNNING
   }
 
+  //移除driver
   private def removeDriver(
       driverId: String,
       finalState: DriverState,
       exception: Option[Exception]) {
+    //用find高阶函数找到driverid对应的driver
     drivers.find(d => d.id == driverId) match {
+        //如果找到了，some，样例类（Option）
       case Some(driver) =>
         logInfo(s"Removing driver: $driverId")
+        //将driver从内存缓存中清除
         drivers -= driver
+        //如果已完成的driver大小大于等于retainedDrivers值，进行trimstart
         if (completedDrivers.size >= RETAINED_DRIVERS) {
           val toRemove = math.max(RETAINED_DRIVERS / 10, 1)
           completedDrivers.trimStart(toRemove)
         }
+        //向completedDrivers加入driver
         completedDrivers += driver
+        //使用持久化引擎删除driver
         persistenceEngine.removeDriver(driver)
+
+        //设置driver的state  exception
         driver.state = finalState
         driver.exception = exception
+        //将driver所在的worker，移除driver
         driver.worker.foreach(w => w.removeDriver(driver))
         //重新调度
         schedule()
