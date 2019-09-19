@@ -482,7 +482,7 @@ private[spark] object RestSubmissionClient {
     }
     val appResource = args(0)
     val mainClass = args(1)
-    val appArgs = args.slice(2, args.size)
+    val appArgs = args.slice(2, args.size)// 参数顺序是 args.primaryResource（用户jar），args.mainClass,args.childArgs
     val conf = new SparkConf
     run(appResource, mainClass, appArgs, conf)
   }

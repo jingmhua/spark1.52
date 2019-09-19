@@ -750,10 +750,13 @@ object SparkSubmit {
     //Thread.currentThread().getContextClassLoader,可以获取当前线程的引用,getContextClassLoader用来获取线程的上下文类加载器
     Thread.currentThread.setContextClassLoader(loader)
 
+    //只有在client模式下， 用户的jar --jars上传的jar全部被带包到loader的classpath里面。所以，只要不少包， 无论隐式引用其他包的类还是显式引用，都会找到。
+    //--jars参数指定的jar是在yarncluster模式下， 直接封装到childArgs里面了， 传递给yarn.client。
     for (jar <- childClasspath) {
       addJarToClasspath(jar, loader)
     }
 
+    //standalone模式此处设置的系统属性，在启动restsubmissionclient，yarn.client, yarnclientschedulerbackend会被下面执行的程序 new sparkconf 操作获取使用或者封装成消费
     for ((key, value) <- sysProps) {
       System.setProperty(key, value)
     }

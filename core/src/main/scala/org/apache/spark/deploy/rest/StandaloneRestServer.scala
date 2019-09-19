@@ -156,18 +156,18 @@ private[rest] class StandaloneSubmitRequestServlet(
     val environmentVariables = request.environmentVariables
 
     // Construct driver description 构建驱动描述
-    val conf = new SparkConf(false)
+    val conf = new SparkConf(false)//参数是个boolean值判断从当前系统获取还是设置？本次采用设置的方式，保留了restsubmissionclient，也即是submit的时候获取的
       .setAll(sparkProperties)
       .set("spark.master", masterUrl)
     val extraClassPath = driverExtraClassPath.toSeq.flatMap(_.split(File.pathSeparator))
     val extraLibraryPath = driverExtraLibraryPath.toSeq.flatMap(_.split(File.pathSeparator))
     val extraJavaOpts = driverExtraJavaOptions.map(Utils.splitCommandString).getOrElse(Seq.empty)
-    val sparkJavaOpts = Utils.sparkJavaOpts(conf)
+    val sparkJavaOpts = Utils.sparkJavaOpts(conf)//将所有sparkconf的转换成java参数，"-D$k=$v"，在driver端启动的时候sparkcontext
     val javaOpts = sparkJavaOpts ++ extraJavaOpts
     val command = new Command(
-      "org.apache.spark.deploy.worker.DriverWrapper",
+      "org.apache.spark.deploy.worker.DriverWrapper",//直接指向的是这个封装，通过自定义urlclassloader指定classpath方式加载用户的jar之后通过反射指向。
       Seq("{{WORKER_URL}}", "{{USER_JAR}}", mainClass) ++ appArgs, // args to the DriverWrapper
-      environmentVariables, extraClassPath, extraLibraryPath, javaOpts)
+      environmentVariables, extraClassPath, extraLibraryPath, javaOpts)//也即是此时spark.jars也即是--jars传来的参数在javaopts里面
     val actualDriverMemory = driverMemory.map(Utils.memoryStringToMb).getOrElse(DEFAULT_MEMORY)
     val actualDriverCores = driverCores.map(_.toInt).getOrElse(DEFAULT_CORES)
     val actualSuperviseDriver = superviseDriver.map(_.toBoolean).getOrElse(DEFAULT_SUPERVISE)
@@ -190,9 +190,9 @@ private[rest] class StandaloneSubmitRequestServlet(
       responseServlet: HttpServletResponse): SubmitRestProtocolResponse = {
     requestMessage match {
       case submitRequest: CreateSubmissionRequest =>
-        val driverDescription = buildDriverDescription(submitRequest)
+        val driverDescription = buildDriverDescription(submitRequest)//准备好所有的参数
         val response = masterEndpoint.askWithRetry[DeployMessages.SubmitDriverResponse](
-          DeployMessages.RequestSubmitDriver(driverDescription))
+          DeployMessages.RequestSubmitDriver(driverDescription))//正式向master提交submitdriver的请求
         val submitResponse = new CreateSubmissionResponse
         submitResponse.serverSparkVersion = sparkVersion
         submitResponse.message = response.message

@@ -517,7 +517,7 @@ private[deploy] class Master(
         //等待启动Driver
         waitingDrivers += driver
         drivers.add(driver)
-        schedule()
+        schedule()//调度
 
         // TODO: It might be good to instead have the submission client poll the master to determine
         //       the current status of the driver. For now it's simply "fire and forget".
