@@ -595,11 +595,21 @@ private[deploy] class Worker(
 
     case LaunchDriver(driverId, driverDesc) => {
       logInfo(s"Asked to launch driver $driverId")
+      //在restsubmissionclient向standalonerestserver提交launchdriver请求后，实际上在standalonerestserver上进行了一层封装
+      //driverwrapper，所以，在此处启动的类driverwrapper，而不是用户程序本身， 在该main方法里，主要是用自定义加载类加载了用户的main，然后进行启动
       val driver = new DriverRunner(
         conf,
         driverId,
         workDir,
         sparkHome,
+
+        /**
+         * 此处的command就是在standaloneRestServer封装好的
+         * val command = new Command(
+         * "org.apache.spark.deploy.worker.DriverWrapper",
+         * Seq("{{WORKER_URL}}", "{{USER_JAR}}", mainClass) ++ appArgs, // args to the DriverWrapper
+         * environmentVariables, extraClassPath, extraLibraryPath, javaOpts)
+         */
         driverDesc.copy(command = Worker.maybeUpdateSSLSettings(driverDesc.command, conf)),
         self,
         workerUri,
