@@ -85,6 +85,7 @@ private[deploy] class DriverRunner(
           val localJarFilename = downloadUserJar(driverDir)
 
           def substituteVariables(argument: String): String = argument match {
+              //替换占位符
             case "{{WORKER_URL}}" => workerUrl
             case "{{USER_JAR}}" => localJarFilename
             case other => other
@@ -161,7 +162,7 @@ private[deploy] class DriverRunner(
     if (!localJarFile.exists()) { // May already exist if running multiple workers on one node
       logInfo(s"Copying user jar $jarPath to $destPath")
       Utils.fetchFile(
-        driverDesc.jarUrl,
+        driverDesc.jarUrl,//就是用户的jar， 也即是appsource
         driverDir,
         conf,
         securityManager,

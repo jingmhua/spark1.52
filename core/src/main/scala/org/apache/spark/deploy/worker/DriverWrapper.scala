@@ -60,6 +60,7 @@ object DriverWrapper {
         //提供给主类的委托
         val clazz = Utils.classForName(mainClass)
         val mainMethod = clazz.getMethod("main", classOf[Array[String]])
+        //下面就开始执行用户的程序了
         mainMethod.invoke(null, extraArgs.toArray[String])
 
         rpcEnv.shutdown()

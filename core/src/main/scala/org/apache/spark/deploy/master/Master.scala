@@ -147,6 +147,7 @@ private[deploy] class Master(
   private var restServerBoundPort: Option[Int] = None
   /**
    * 向Master的ActorSystem注册Master,会先触发onStart方法
+    * 环境在最初执行start-master.sh的时候也应该执行该方法。
    */
   override def onStart(): Unit = {
     logInfo("Starting Spark master at " + masterUrl)
@@ -183,7 +184,7 @@ private[deploy] class Master(
 
     val serializer = new JavaSerializer(conf)
     //选择故障恢复的持久化引擎,选择领导选举代理(leaderElectionAgent),local-cluster模式中将注册MonarchyLeaderAgent
-    //因此触发MonarchyLeaderAgent.electedLeader方法
+    //    //因此触发MonarchyLeaderAgent.electedLeader方法
     val (persistenceEngine_, leaderElectionAgent_) = RECOVERY_MODE match {
       case "ZOOKEEPER" =>
         logInfo("Persisting recovery state to ZooKeeper")
@@ -921,6 +922,7 @@ private[deploy] class Master(
     for (worker <- shuffledWorkers if worker.state == WorkerState.ALIVE) {//遍历活着的workers
       //用yarn-cluster才会注册driver，因为standalone和yarn-client模式下都会在本地直接启动driver，
       // 不会来注册driver，更不可能让master调度driver了
+      //在注册worker的时候也会调用到本方法，但因waitingDrivers是空，所以略过该for循环。
       for (driver <- waitingDrivers) {//在等待队列中的Driver会进行资源分配
 	        //当前的worker内存和cpu均大于当前driver请求的mem和cpu,启动launchDriver
         if (worker.memoryFree >= driver.desc.mem && worker.coresFree >= driver.desc.cores) {

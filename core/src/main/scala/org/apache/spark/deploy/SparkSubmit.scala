@@ -764,6 +764,7 @@ object SparkSubmit {
     var mainClass: Class[_] = null
 
     try {
+      // childMainClass = "org.apache.spark.deploy.rest.RestSubmissionClient"
       mainClass = Utils.classForName(childMainClass)
     } catch {
       case e: ClassNotFoundException =>
@@ -797,6 +798,7 @@ object SparkSubmit {
     }
 
     try {
+      //调用RestSubmissionClient的main方法
       mainMethod.invoke(null, childArgs.toArray)
     } catch {
       case t: Throwable =>

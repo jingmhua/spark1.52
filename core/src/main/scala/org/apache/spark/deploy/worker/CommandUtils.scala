@@ -41,6 +41,7 @@ object CommandUtils extends Logging {
    * Build a ProcessBuilder based on the given parameters.
    * The `env` argument is exposed for testing.
     * `env`参数暴露出来进行测试
+    * 为了扩展构建本地command，就调用的时候缺省了2个参数， 一个是本地系统环境变量， 一个是本地classpath
    */
   def buildProcessBuilder(
       command: Command,
@@ -54,9 +55,11 @@ object CommandUtils extends Logging {
       //System.getProperties() 返回Java进程变量值 通过命令行参数的"-D"选项
       env: Map[String, String] = sys.env): ProcessBuilder = {
     //ProcessBuilder实例管理一个进程属性集
+    //结合command要运行的环境，重新构建一个命令，加入本地环境变量， 系统classpath，替换掉传过来的占位符
     val localCommand = buildLocalCommand(
       command, securityMgr, substituteArguments, classPaths, env)
-    val commandSeq = buildCommandSeq(localCommand, memory, sparkHome)
+    //结合上部构建的localcommand构建一个结合本地环境的commonseq，然后用他去构建一个processbuilder
+    val commandSeq = buildCommandSeq(localCommand, memory, sparkHome)//driver，executor的运行时内存
     //ProcessBuilder此类用于创建操作系统进程,它提供一种启动和管理进程（也就是应用程序）的方法
     val builder = new ProcessBuilder(commandSeq: _*)
     val environment = builder.environment()
@@ -93,7 +96,7 @@ object CommandUtils extends Logging {
       substituteArguments: String => String,
       classPath: Seq[String] = Seq[String](),
       env: Map[String, String]): Command = {
-    val libraryPathName = Utils.libraryPathEnvName
+    val libraryPathName = Utils.libraryPathEnvName//返回系统的path，也就是一些
     val libraryPathEntries = command.libraryPathEntries
     val cmdLibraryPath = command.environment.get(libraryPathName)
 
@@ -101,7 +104,8 @@ object CommandUtils extends Logging {
       val libraryPaths = libraryPathEntries ++ cmdLibraryPath ++ env.get(libraryPathName)
       command.environment + ((libraryPathName, libraryPaths.mkString(File.pathSeparator)))
     } else {
-      command.environment
+      command.environment//restsubmissionclient发送过来的环境变量只有spark_和mesos_开头的环境变量
+      //也即是对于driver端system.getenv()系统环境变量获取的值， 如spark-env.sh初始化SPARK_开头的环境变量， 在提交的时候已经创建好了。
     }
 
     // set auth secret to env variable if needed
@@ -111,6 +115,8 @@ object CommandUtils extends Logging {
     }
 
     Command(
+      //对于driver并不是用户命令的入库而是一个封装类org.apache.spark.deploy.worker.DriverWrapper，在封装类里面进行了进一步解析。
+      //对于executor是这个 org.apache.executor.CoarseGranedExecutorsBackend类
       command.mainClass,
       command.arguments.map(substituteArguments),
       newEnvironment,
@@ -119,7 +125,7 @@ object CommandUtils extends Logging {
       Seq[String](), // library path already captured in environment variable
       // filter out auth secret from java options
       //已经在环境变量中捕获的库路径从java选项过滤掉auth secret
-      command.javaOpts.filterNot(_.startsWith("-D" + SecurityManager.SPARK_AUTH_SECRET_CONF)))
+      command.javaOpts.filterNot(_.startsWith("-D" + SecurityManager.SPARK_AUTH_SECRET_CONF)))//spark.jars 在此处
   }
 
   /** 

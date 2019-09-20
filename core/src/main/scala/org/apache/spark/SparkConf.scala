@@ -587,6 +587,10 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging {
         """.stripMargin
       logWarning(warning)
 
+      //found both spark.executor.extraclasspath  and spark_classpath. use only the former。
+      //之所以在yearn-client模式下会发生，而在yarn-cluster下不会发生，是因为yarn-client模式下使用的spark的2个配置。
+      //而yarn-cluster没有一个。另一个功能是把spark_classpath替换为spark.executtor.extraclasspath。yarn-client方式由于直接执行了用户代码加速在sparksubmit方发里面我们会将
+      //spark.executor.extraclasspath设置到系统属性里面，从而被我们的sparkconf读取到然后就直接在sparkcontext进行参数有效性检查的时候抛出了异常
       for (key <- Seq(executorClasspathKey, driverClassPathKey)) {
         if (getOption(key).isDefined) {
           throw new SparkException(s"Found both $key and SPARK_CLASSPATH. Use only the former.")

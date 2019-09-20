@@ -383,7 +383,7 @@ private[deploy] class Worker(
     registrationRetryTimer match {
       case None =>
         registered = false //标记未注册,为true代表注册成功
-        //向所有Mastr发送RegisterWorker消息
+        //向所有Master发送RegisterWorker消息
         registerMasterFutures = tryRegisterAllMasters() //向所有的Master发送发出注册请求
         connectionAttemptCount = 0//记录重试次数
         registrationRetryTimer = Some(forwordMessageScheduler.scheduleAtFixedRate(

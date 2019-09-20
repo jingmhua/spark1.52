@@ -470,11 +470,13 @@ private[spark] object RestSubmissionClient {
     val sparkProperties = conf.getAll.toMap
     val environmentVariables = env.filter { case (k, _) => k.startsWith("SPARK_") }
     val client = new RestSubmissionClient(master)
+    //构建request
     val submitRequest = client.constructSubmitRequest(
       appResource, mainClass, appArgs, sparkProperties, environmentVariables)
     client.createSubmission(submitRequest)
   }
 
+  //main方法由sparksubmit类的runMain方法，通过反射机制调用的
   def main(args: Array[String]): Unit = {
     if (args.size < 2) {
       sys.error("Usage: RestSubmissionClient [app resource] [main class] [app args*]")

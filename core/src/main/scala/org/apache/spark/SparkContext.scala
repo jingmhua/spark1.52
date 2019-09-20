@@ -3059,8 +3059,9 @@ object SparkContext extends Logging {
         (backend, scheduler)
 
       case SPARK_REGEX(sparkUrl) =>
-        val scheduler = new TaskSchedulerImpl(sc)
+        val scheduler = new TaskSchedulerImpl(sc)//任务调度器
         val masterUrls = sparkUrl.split(",").map("spark://" + _)
+        //重点， 用户程序向master注册，executor申请都是在该函数下完成的，start是在taskschedulerimpl中的start函数里启动的。
         val backend = new SparkDeploySchedulerBackend(scheduler, sc, masterUrls)
         scheduler.initialize(backend)
         (backend, scheduler)
