@@ -832,7 +832,7 @@ private[deploy] class Master(
    * 4)还没有为此Application运行过Executor
    * 5)对于过虑得到的Worker按照其空闲内核数倒序排列,实际需要分配的内核数,从Application需要的内核数与所有过滤后的 Worker的空闲内核数的总和两者中取最小值
    *  如果需要分配的内核数大于0,则逐个从各个Worker中给Application分配1个内核.当所有Worker都分配过后,需要分配的内核依然大于0
-   *  则从头一个worker再次分配,如此往复,直到Applcation需要的内核数为0
+   *  则从头一个worker再次分配,如此往复,直到Applcation需要的内核数为0（FIFO机制）
     */
   private def startExecutorsOnWorkers(): Unit = {
     // Right now this is a very simple FIFO scheduler. We keep trying to fit in the first app
@@ -911,7 +911,8 @@ private[deploy] class Master(
    * （包括Executor增加或者减少、Worker增加或者减少等）
    * Schedule the currently available resources among waiting apps. This method will be called
    * every time a new app joins or resource availability changes.
-   * 
+   *
+    * 该方法可以对driver、application分配资源
    */
   private def schedule(): Unit = {
     if (state != RecoveryState.ALIVE) { return }
@@ -920,9 +921,9 @@ private[deploy] class Master(
     //把当前workers这个HashSet的顺序随机打乱
     val shuffledWorkers = Random.shuffle(workers) // Randomization helps balance drivers
     for (worker <- shuffledWorkers if worker.state == WorkerState.ALIVE) {//遍历活着的workers
-      //用yarn-cluster才会注册driver，因为standalone和yarn-client模式下都会在本地直接启动driver，
-      // 不会来注册driver，更不可能让master调度driver了
+
       //在注册worker的时候也会调用到本方法，但因waitingDrivers是空，所以略过该for循环。
+      // for (driver <- waitingDrivers) 这个是给driver分配资源的。
       for (driver <- waitingDrivers) {//在等待队列中的Driver会进行资源分配
 	        //当前的worker内存和cpu均大于当前driver请求的mem和cpu,启动launchDriver
         if (worker.memoryFree >= driver.desc.mem && worker.coresFree >= driver.desc.cores) {
@@ -936,6 +937,7 @@ private[deploy] class Master(
     //application的调度机制（重中之重）
     //根据spreadOutApps的值，1种是把worker的cpu core平均分配给executor，
     // 另外1种是把worker的cpu core集中分配到1个executor上。
+    //application的资源调度在如下方法中
     startExecutorsOnWorkers()
   }
 /**

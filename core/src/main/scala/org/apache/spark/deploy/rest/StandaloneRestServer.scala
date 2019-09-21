@@ -93,7 +93,7 @@ private[rest] class StandaloneKillRequestServlet(masterEndpoint: RpcEndpointRef,
 /**
  * A servlet for handling status requests passed to the [[StandaloneRestServer]].
  * 一个servlet处理状态请求传递到standalonerestserver
- */
+ */handleSubmit
 private[rest] class StandaloneStatusRequestServlet(masterEndpoint: RpcEndpointRef, conf: SparkConf)
   extends StatusRequestServlet {
 

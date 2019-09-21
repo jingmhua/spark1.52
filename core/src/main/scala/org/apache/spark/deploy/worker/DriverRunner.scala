@@ -146,7 +146,7 @@ private[deploy] class DriverRunner(
   }
 
   /**
-   * 将用户jar下载到所提供的目录,并返回其本地路径,如果有错误,将抛出一个异常
+   *  ,如果有错误,将抛出一个异常
    * Download the user jar into the supplied directory and return its local path.
    * Will throw an exception if there are errors downloading the jar.
    */
