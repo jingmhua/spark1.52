@@ -200,6 +200,10 @@ private[spark] class TaskSchedulerImpl(
     waitBackendReady()
   }
 
+  /**
+   * DAGScheduler的submitMissingTasks方法调用本方法，提交taskset
+   * @param taskSet
+   */
   override def submitTasks(taskSet: TaskSet) {
     //获取TaskSet中的tasks  
     val tasks = taskSet.tasks

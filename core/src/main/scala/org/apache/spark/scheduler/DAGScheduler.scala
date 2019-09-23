@@ -372,7 +372,7 @@ class DAGScheduler(
       callSite: CallSite): ResultStage = {
     //获取所有的父Stage列表,父Stage主要是宽依赖对应的Stage,id是StageID
     val (parentStages: List[Stage], id: Int) = getParentStagesAndId(rdd, jobId)
-    //创建Stege
+    //创建Stage
     val stage: ResultStage = new ResultStage(id, rdd, numTasks, parentStages, jobId, callSite)
     //将stage加入到stageIdToStage中  
     stageIdToStage(id) = stage
