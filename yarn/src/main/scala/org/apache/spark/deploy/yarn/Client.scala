@@ -128,12 +128,17 @@ private[spark] class Client(
 
       // Set up the appropriate contexts to launch our AM
       //设置适当的上下文以启动我们的AM
+
+      //// 关键是这两个方法:
+      // // 1. 创建ApplicationMaster ContainerLaunch上下文，将ContainerLaunch命令、jar包、java变量等环境准备完毕
       val containerContext = createContainerLaunchContext(newAppResponse)
+      // 2. 创建Application提交至YARN的上下文，主要读取配置文件设置调用YARN接口前的上下文变量。
       val appContext = createApplicationSubmissionContext(newApp, containerContext)
 
       // Finally, submit and monitor the application
       //最后,提交并监控申请
       logInfo(s"Submitting application ${appId.getId} to ResourceManager")
+      //这句话才是真正的提交application。
       yarnClient.submitApplication(appContext)
       appId
     } catch {
@@ -1002,6 +1007,7 @@ private[spark] class Client(
     * 终止或未定义状态完成,则抛出适当的SparkException。
    */
   def run(): Unit = {
+    //提交am申请
     val appId = submitApplication()
     if (fireAndForget) {
       val report = getApplicationReport(appId)
